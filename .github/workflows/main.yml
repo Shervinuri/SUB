@@ -1,4 +1,4 @@
-name: Shen V2Ray Collector (URL Test)
+name: Shen V2Ray Collector (Diagnostic)
 
 on:
   workflow_dispatch:
@@ -17,10 +17,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      # --- خط اصلاح شده ---
-      # کتابخانه pyyaml برای کار با فایل‌های کانفیگ به لیست نصب اضافه شد
       - name: Install Dependencies
-        run: pip install requests pyyaml
+        # استفاده از نام رسمی پکیج برای اطمینان بیشتر
+        run: pip install requests PyYAML
+
+      # --- قدم جدید و تشخیصی ---
+      - name: Verify Installed Packages
+        run: pip list
 
       - name: Download Clash for Testing
         run: |
