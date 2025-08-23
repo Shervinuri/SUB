@@ -15,8 +15,7 @@ REMARK_NAME = "☬SHΞN™"
 
 # --- الگوی استخراج کانفیگ ---
 VLESS_PATTERN = re.compile(r'^vless://([^#]+)#?(.*)$')
-VMESS_PATTERN = re.
-compile(r'^vmess://([^#]+)#?(.*)$')
+VMESS_PATTERN = re.compile(r'^vmess://([^#]+)#?(.*)$')
 
 # --- لیست کانفیگ‌های منحصر به فرد ---
 unique_configs = {}
@@ -117,7 +116,7 @@ def test_with_sni(host, port, sni, timeout=3.0):
         context = ssl.create_default_context()
         context.check_hostname = True
         context.verify_mode = ssl.CERT_REQUIRED
-        context.set_servername_callback(lambda sock, server_name: None)  # قرار دادن SNI
+        context.set_servername_callback(lambda sock, server_name: None)
 
         ssl_sock = context.wrap_socket(sock, server_hostname=sni)
         start_time = socket.gethrtime()
@@ -140,7 +139,6 @@ def is_healthy(config):
     port = config['port']
     sni = config['sni']
 
-    # تست با SNI
     latency = test_with_sni(host, port, sni, timeout=3.0)
     if latency and latency < HEALTH_THRESHOLD_MS:
         return latency
