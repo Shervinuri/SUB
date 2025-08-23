@@ -20,9 +20,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      # مرحله ۲: آماده‌سازی محیط پایتون (نسخه اصلاح شده نهایی)
-      # در این نسخه، کل بخش 'with' که باعث خطا می‌شد حذف شده است
-      # و نسخه پایتون به صورت مستقیم در خود اکشن تنظیم می‌شود.
+      # مرحله ۲: آماده‌سازی محیط پایتون
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -39,7 +37,9 @@ jobs:
           tar -zxvf subconverter.tar.gz
           chmod +x ./subconverter/subconverter
 
-          wget -O clash.gz https://github.com/Dreamacro/clash/releases/download/v1.18.0/clash-linux-amd64-v3-v1.18.0.gz
+          # --- خط اصلاح شده ---
+          # لینک دانلود Clash با یک نسخه معتبر و پایدار جایگزین شد تا خطای 404 برطرف شود
+          wget -O clash.gz https://github.com/Dreamacro/clash/releases/download/v1.11.1/clash-linux-amd64.gz
           gzip -d clash.gz
           chmod +x ./clash
 
@@ -54,6 +54,5 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add pure.md
-          # اگر خروجی اسکریپت پایتون وجود داشته باشد، از آن استفاده می‌شود
           git commit -m "✨ SHEN Collector Update | Found ${{ steps.run_script.outputs.node_count || 'some' }} premium nodes" || echo "No changes to commit"
           git push
