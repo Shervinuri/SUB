@@ -12,7 +12,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 SOURCE_URL = "https://raw.githubusercontent.com/Shervinuri/SUB/main/Source.txt"
 OUTPUT_FILE = "pure.md"
 FINAL_REMARK = "☬SHΞN™"
-MAX_LATENCY = 400
+# --- معیار سخت‌گیرانه‌تر ---
+MAX_LATENCY = 250
 MAX_FINAL_NODES = 150
 MAX_WORKERS = 100
 
@@ -49,7 +50,6 @@ def parse_node_details(link):
     try:
         if link.startswith('vless://'):
             parsed_url = urlparse(link)
-            # --- FIX: اطمینان از وجود هاست و پورت ---
             if not parsed_url.hostname or not parsed_url.port: return None
             details['server'] = parsed_url.hostname
             details['port'] = parsed_url.port
@@ -58,7 +58,6 @@ def parse_node_details(link):
             return details
         elif link.startswith('vmess://'):
             decoded_json = json.loads(decode_base64_content(link.replace("vmess://", "")))
-            # --- FIX: اطمینان از وجود آدرس و پورت ---
             if not decoded_json.get('add') or not decoded_json.get('port'): return None
             details['server'] = decoded_json.get('add')
             details['port'] = int(decoded_json.get('port'))
@@ -69,9 +68,7 @@ def parse_node_details(link):
     return details
 
 def is_cloudflare_ip(ip_str):
-    # --- FIX: مدیریت ورودی‌های نامعتبر یا None ---
-    if not isinstance(ip_str, str):
-        return False
+    if not isinstance(ip_str, str): return False
     try:
         ip = ipaddress.ip_address(ip_str)
         for cidr in CLOUDFLARE_IPV4_RANGES:
@@ -108,13 +105,10 @@ def pre_filter_nodes(nodes):
     high_potential_nodes = []
     for link in nodes:
         details = parse_node_details(link)
-        if not details:
-            continue
-        
+        if not details: continue
         if is_cloudflare_ip(details.get('server')):
             if details.get('type') == 'ws' and details.get('port') in PREFERRED_PORTS:
                 high_potential_nodes.append(link)
-
     print(f"Found {len(high_potential_nodes)} high-potential nodes matching the pattern.")
     return high_potential_nodes
 
@@ -122,14 +116,13 @@ def check_connectivity(node_link):
     details = parse_node_details(node_link)
     if not details: return None, None
     server, port = details['server'], details['port']
-    
     try:
         start_time = time.time()
         sock = socket.create_connection((server, port), timeout=3)
         latency = (time.time() - start_time) * 1000
         sock.close()
         if latency < MAX_LATENCY:
-            print(f"  [SUCCESS] {server}:{port} -> Latency: {int(latency)}ms")
+            # print(f"  [SUCCESS] {server}:{port} -> Latency: {int(latency)}ms") # لاگ اضافه
             return node_link, int(latency)
     except (socket.timeout, socket.error, OSError):
         pass
@@ -151,6 +144,8 @@ def run_health_check(nodes):
 def generate_final_sub(nodes):
     print("Generating final subscription file...")
     nodes.sort(key=lambda x: x.get('latency', 9999))
+    # --- منطق جدید و هوشمند ---
+    # دیگر همیشه 150 تا نیست. فقط بهترین‌ها تا سقف 150 تا انتخاب می‌شوند.
     final_nodes = nodes[:MAX_FINAL_NODES]
     
     final_links = []
@@ -190,4 +185,3 @@ if __name__ == "__main__":
                 with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
                     f.write(final_sub)
                 print(f"\n✅ Process completed! Output saved to {OUTPUT_FILE}")
-
