@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # --- تنظیمات اصلی ---
 SOURCE_URL = "https://raw.githubusercontent.com/Shervinuri/SUB/main/Source.txt"
 OUTPUT_FILE = "pure.md"
-FINAL_REMARK = "4p2gU0jXiE7ihKI="
+FINAL_REMARK = "☬SHΞN™"
 MAX_LATENCY = 400  # کمی بالاتر به دلیل تست ساده‌تر
 MAX_FINAL_NODES = 150
 MAX_WORKERS = 100 # می‌توانیم تعداد را بالاتر ببریم چون تست سبک‌تر است
