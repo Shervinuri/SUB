@@ -1,35 +1,38 @@
-name: Shen V2Ray Collector (TCP Test & Priority Sort)
+name: Auto Update Subscription
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # اجرای دستی
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: '*/2 * * * *'  # هر 6 ساعت یکبار
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      # --- خط اصلاح شده ---
-      # کتابخانه idna برای مدیریت آدرس‌های غیر استاندارد اضافه شد
       - name: Install Dependencies
-        run: pip install requests idna
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests idna
 
-      - name: Run The Collector Script
-        id: run_script
+      - name: Run Processing Script
         run: python process_subs.py
 
-      - name: Commit and Push Results
+      - name: Commit and Push Changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add pure.md
-          git commit -m "✨ SHEN Collector Update | Found ${{ steps.run_script.outputs.node_count || 'some' }} premium nodes" || echo "No changes to commit"
-          git push
+          git add .
+          git commit -m "Update subscription: $(date +'%Y-%m-%d %H:%M')" || echo "No changes to commit"
+          git push origin HEAD:main
