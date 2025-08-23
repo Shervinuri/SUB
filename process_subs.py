@@ -4,7 +4,8 @@ import base64
 import json
 import socket
 import time
-import ipaddress
+import yaml
+import subprocess
 from urllib.parse import urlparse, unquote, parse_qs
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -12,21 +13,17 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 SOURCE_URL = "https://raw.githubusercontent.com/Shervinuri/SUB/main/Source.txt"
 OUTPUT_FILE = "pure.md"
 FINAL_REMARK = "☬SHΞN™"
-# --- معیار سخت‌گیرانه‌تر ---
-MAX_LATENCY = 250
+# --- URL تست جدید ---
+TEST_URL = "http://play.googleapis.com/generate_204"
+MAX_LATENCY = 450 # کمی بالاتر به دلیل تست کامل‌تر
 MAX_FINAL_NODES = 150
-MAX_WORKERS = 100
+MAX_WORKERS = 50 # به دلیل اجرای پروسه‌های سنگین‌تر، تعداد کمتر می‌شود
 
-# --- فیلترهای هوشمند ---
-CLOUDFLARE_IPV4_RANGES = [
-    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
-    "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
-    "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
-    "172.64.0.0/13", "131.0.72.0/22"
-]
-PREFERRED_PORTS = {443, 8443, 2096, 2083, 2053, 80, 8080, 8880}
+# --- الگوی اولویت‌بندی ---
+PRIORITY_PROTOCOLS = {'ws', 'grpc'}
 
 def get_sub_links():
+    """لیست لینک‌های اشتراک را از فایل شما می‌خواند."""
     print("Fetching subscription links...")
     try:
         response = requests.get(SOURCE_URL, timeout=10)
@@ -39,6 +36,7 @@ def get_sub_links():
         return []
 
 def decode_base64_content(content):
+    """محتوای Base64 را با مدیریت خطا دیکد می‌کند."""
     try:
         content += '=' * (-len(content) % 4)
         return base64.b64decode(content).decode('utf-8')
@@ -46,39 +44,43 @@ def decode_base64_content(content):
         return None
 
 def parse_node_details(link):
-    details = {}
+    """جزئیات کامل یک لینک را به فرمت دیکشنری Clash تبدیل می‌کند."""
     try:
         if link.startswith('vless://'):
             parsed_url = urlparse(link)
             if not parsed_url.hostname or not parsed_url.port: return None
-            details['server'] = parsed_url.hostname
-            details['port'] = parsed_url.port
+            uuid = parsed_url.username
+            server = parsed_url.hostname
+            port = parsed_url.port
             params = parse_qs(parsed_url.query)
-            details['type'] = params.get('type', ['tcp'])[0]
-            return details
+            node = {
+                'name': unquote(parsed_url.fragment) if parsed_url.fragment else f"{server}:{port}",
+                'type': 'vless', 'server': server, 'port': port, 'uuid': uuid,
+                'tls': params.get('security', ['none'])[0] == 'tls',
+                'network': params.get('type', ['tcp'])[0], 'udp': True,
+                'servername': params.get('sni', [server])[0], 'link': link
+            }
+            if node['network'] == 'ws':
+                node['ws-opts'] = {'path': params.get('path', ['/'])[0], 'headers': {'Host': params.get('host', [server])[0]}}
+            return node
         elif link.startswith('vmess://'):
             decoded_json = json.loads(decode_base64_content(link.replace("vmess://", "")))
             if not decoded_json.get('add') or not decoded_json.get('port'): return None
-            details['server'] = decoded_json.get('add')
-            details['port'] = int(decoded_json.get('port'))
-            details['type'] = decoded_json.get('net', 'tcp')
-            return details
+            node = {
+                'name': decoded_json.get('ps', f"{decoded_json.get('add')}:{decoded_json.get('port')}"),
+                'type': 'vmess', 'server': decoded_json.get('add'), 'port': int(decoded_json.get('port')),
+                'uuid': decoded_json.get('id'), 'alterId': int(decoded_json.get('aid')), 'cipher': 'auto',
+                'tls': decoded_json.get('tls') == 'tls', 'network': decoded_json.get('net', 'tcp'), 'udp': True, 'link': link
+            }
+            if node['network'] == 'ws':
+                node['ws-opts'] = {'path': decoded_json.get('path', '/'), 'headers': {'Host': decoded_json.get('host', node['server'])}}
+            return node
     except Exception:
         return None
-    return details
-
-def is_cloudflare_ip(ip_str):
-    if not isinstance(ip_str, str): return False
-    try:
-        ip = ipaddress.ip_address(ip_str)
-        for cidr in CLOUDFLARE_IPV4_RANGES:
-            if ip in ipaddress.ip_network(cidr):
-                return True
-    except ValueError:
-        return False
-    return False
+    return None
 
 def get_all_nodes(links):
+    """تمام کانفیگ‌ها را استخراج و به فرمت دیکشنری تبدیل می‌کند."""
     all_nodes = []
     seen_identifiers = set()
     for link in links:
@@ -93,64 +95,82 @@ def get_all_nodes(links):
                     if details:
                         identifier = f"{details['server']}:{details['port']}"
                         if identifier not in seen_identifiers:
-                            all_nodes.append(line)
+                            all_nodes.append(details)
                             seen_identifiers.add(identifier)
         except Exception:
             continue
-    print(f"\nFound {len(all_nodes)} unique VLESS/VMESS nodes in total.")
+    print(f"\nFound {len(all_nodes)} unique VLESS/VMESS nodes to test.")
     return all_nodes
 
-def pre_filter_nodes(nodes):
-    print("Applying smart pre-filter...")
-    high_potential_nodes = []
-    for link in nodes:
-        details = parse_node_details(link)
-        if not details: continue
-        if is_cloudflare_ip(details.get('server')):
-            if details.get('type') == 'ws' and details.get('port') in PREFERRED_PORTS:
-                high_potential_nodes.append(link)
-    print(f"Found {len(high_potential_nodes)} high-potential nodes matching the pattern.")
-    return high_potential_nodes
+def test_node_with_url(node_details, index):
+    """یک کانفیگ را با Clash و تست URL بررسی می‌کند."""
+    # ساخت یک فایل کانفیگ موقت فقط برای این یک نود
+    config = {'proxies': [node_details]}
+    config_filename = f"temp_config_{index}.yaml"
+    with open(config_filename, 'w', encoding='utf-8') as f:
+        yaml.dump(config, f, allow_unicode=True)
 
-def check_connectivity(node_link):
-    details = parse_node_details(node_link)
-    if not details: return None, None
-    server, port = details['server'], details['port']
+    clash_process = None
     try:
+        # اجرای Clash با یک پورت منحصر به فرد
+        port = 7890 + index
+        clash_process = subprocess.Popen(
+            ['./clash', '-d', '.', '-f', config_filename, '-p', str(port)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        time.sleep(2) # فرصت برای اجرا شدن Clash
+
+        proxy_url = f"http://127.0.0.1:{port}"
         start_time = time.time()
-        sock = socket.create_connection((server, port), timeout=3)
+        # اجرای curl برای تست اتصال از طریق پراکسی
+        result = subprocess.run(
+            ['curl', '-s', '--proxy', proxy_url, TEST_URL, '--max-time', '5', '-o', '/dev/null'],
+            capture_output=True
+        )
         latency = (time.time() - start_time) * 1000
-        sock.close()
-        if latency < MAX_LATENCY:
-            # print(f"  [SUCCESS] {server}:{port} -> Latency: {int(latency)}ms") # لاگ اضافه
-            return node_link, int(latency)
-    except (socket.timeout, socket.error, OSError):
+
+        if result.returncode == 0 and latency < MAX_LATENCY:
+            print(f"  [SUCCESS] {node_details['server']}:{node_details['port']} -> Latency: {int(latency)}ms")
+            return node_details, int(latency)
+    except Exception:
         pass
+    finally:
+        if clash_process and clash_process.poll() is None:
+            clash_process.terminate()
+        if os.path.exists(config_filename):
+            os.remove(config_filename)
     return None, None
 
 def run_health_check(nodes):
+    """تست سلامت را به صورت موازی روی تمام کانفیگ‌ها اجرا می‌کند."""
     if not nodes: return []
-    print(f"\nRunning health check on {len(nodes)} high-potential nodes...")
+    print(f"\nRunning URL health check on all {len(nodes)} nodes...")
     healthy_nodes = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        future_to_node = {executor.submit(check_connectivity, node): node for node in nodes}
-        for future in as_completed(future_to_node):
+        future_to_node = {executor.submit(test_node_with_url, node, i): node for i, node in enumerate(nodes)}
+        for i, future in enumerate(as_completed(future_to_node)):
             node, latency = future.result()
             if node and latency:
-                healthy_nodes.append({'link': node, 'latency': latency})
-    print(f"\nFound {len(healthy_nodes)} healthy nodes with latency < {MAX_LATENCY}ms.")
+                node['latency'] = latency
+                healthy_nodes.append(node)
+            print(f"\rProgress: {i + 1}/{len(nodes)} nodes tested...", end="")
+    print(f"\n\nFound {len(healthy_nodes)} healthy nodes with latency < {MAX_LATENCY}ms.")
     return healthy_nodes
 
-def generate_final_sub(nodes):
-    print("Generating final subscription file...")
-    nodes.sort(key=lambda x: x.get('latency', 9999))
-    # --- منطق جدید و هوشمند ---
-    # دیگر همیشه 150 تا نیست. فقط بهترین‌ها تا سقف 150 تا انتخاب می‌شوند.
+def sort_and_finalize(nodes):
+    """کانفیگ‌ها را بر اساس اولویت و پینگ مرتب کرده و خروجی نهایی را می‌سازد."""
+    print("Sorting nodes based on priority (ws, grpc) and latency...")
+    def get_sort_key(node):
+        priority = 1 if node.get('network') in PRIORITY_PROTOCOLS else 2
+        latency = node.get('latency', 9999)
+        return (priority, latency)
+
+    nodes.sort(key=get_sort_key)
     final_nodes = nodes[:MAX_FINAL_NODES]
     
     final_links = []
-    for node_data in final_nodes:
-        link = node_data['link']
+    for node_details in final_nodes:
+        link = node_details['link']
         try:
             if link.startswith('vless://'):
                 link = link.split('#')[0] + '#' + FINAL_REMARK
@@ -178,10 +198,9 @@ if __name__ == "__main__":
     if sub_links:
         all_nodes = get_all_nodes(sub_links)
         if all_nodes:
-            potential_nodes = pre_filter_nodes(all_nodes)
-            healthy_nodes = run_health_check(potential_nodes)
+            healthy_nodes = run_health_check(all_nodes)
             if healthy_nodes:
-                final_sub = generate_final_sub(healthy_nodes)
+                final_sub = sort_and_finalize(healthy_nodes)
                 with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
                     f.write(final_sub)
                 print(f"\n✅ Process completed! Output saved to {OUTPUT_FILE}")
