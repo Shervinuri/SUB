@@ -26,8 +26,7 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
-          # کش کردن پکیج‌ها برای افزایش سرعت در اجراهای بعدی
-          cache: "pip"
+          # خط مشکل‌ساز حذف شد
 
       # مرحله ۳: نصب کتابخانه‌های مورد نیاز پایتون
       - name: Install Dependencies
