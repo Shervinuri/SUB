@@ -1,4 +1,4 @@
-name: Shen V2Ray Collector (Ultra Simple)
+name: Shen V2Ray Collector (Final Fix)
 
 on:
   workflow_dispatch:
@@ -18,9 +18,8 @@ jobs:
           python-version: '3.11'
 
       - name: Install Dependencies
-        run: pip install requests
-
-      # مرحله دانلود ابزار اضافه به طور کامل حذف شده است
+        # کتابخانه idna برای ضدعفونی کردن آدرس‌های سرور اضافه شد
+        run: pip install requests idna
 
       - name: Run The Collector Script
         id: run_script
@@ -31,5 +30,5 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add pure.md
-          git commit -m "✨ SHEN Collector Update | Found ${{ steps.run_script.outputs.node_count || 'some' }} premium nodes" || echo "No changes to commit"
+          git commit -m "🪄 ☬SHΞN™ Bank Uped ! | Found ${{ steps.run_script.outputs.node_count || 'some' }} premium nodes" || echo "No changes to commit"
           git push
