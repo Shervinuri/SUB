@@ -10,7 +10,7 @@ from collections import OrderedDict
 SOURCE_URL = "https://raw.githubusercontent.com/Shervinuri/SUB/main/Source.txt"
 OUTPUT_FILE = "pure.md"
 MAX_CONFIGS = 300
-HEALTH_THRESHOLD_MS = 600  # افزایش از 350 به 600 برای پذیرش سرورهای دور
+HEALTH_THRESHOLD_MS = 600
 REMARK_NAME = "☬SHΞN™"
 
 # --- الگوی استخراج کانفیگ ---
@@ -106,7 +106,6 @@ def parse_vless_or_vmess(url):
 
 def ping_server(host, port, timeout=2.0):
     try:
-        # اول resolve کن
         try:
             socket.gethostbyname(host)
         except:
@@ -127,6 +126,40 @@ def ping_server(host, port, timeout=2.0):
     except Exception as e:
         return None
 
+def http_test(host, port, path, timeout=3.0):
+    try:
+        # ساخت URL
+        scheme = "https" if port == 443 else "http"
+        url = f"{scheme}://{host}:{port}{path}"
+
+        # ارسال GET
+        resp = requests.get(url, timeout=timeout, verify=False, allow_redirects=True)
+        if resp.status_code in [200, 301, 302]:
+            return (resp.elapsed.total_seconds() * 1000)
+        return None
+    except Exception as e:
+        return None
+
+def is_healthy(config):
+    host = config['host']
+    port = config['port']
+    path = config['path']
+
+    # اگر ws یا grpc باشه → تست HTTP
+    if config['ws'] or config['grpc']:
+        # تست با path
+        test_path = path or "/"
+        latency = http_test(host, port, test_path, timeout=3.0)
+        if latency and latency < HEALTH_THRESHOLD_MS:
+            return latency
+        return None
+
+    # اگر tcp باشه → تست ping
+    latency = ping_server(host, port, timeout=2.0)
+    if latency and latency < HEALTH_THRESHOLD_MS:
+        return latency
+    return None
+
 def main():
     print("🔄 در حال خواندن لیست منابع...")
     try:
@@ -146,17 +179,14 @@ def main():
             resp = requests.get(link, timeout=10)
             content = resp.text.strip()
 
-            # تشخیص Base64 (حتی با پیشوند مثل data:text/plain;base64,)
             if 'base64,' in content or 'base64;' in content:
                 try:
-                    # جدا کردن بخش base64
                     parts = content.split(',', 1)
                     if len(parts) > 1:
                         content = decode_base64(parts[1])
                 except Exception:
-                    pass  # اگر خطا داشت، متن خام رو نگه دار
+                    pass
 
-            # استخراج کانفیگ‌ها
             for line in content.splitlines():
                 line = line.strip()
                 if not line:
@@ -168,7 +198,6 @@ def main():
                         if key not in unique_configs:
                             unique_configs[key] = config
                         else:
-                            # اگر جدید ws/grpc باشه، جایگزین کن
                             if config['ws'] or config['grpc']:
                                 if not unique_configs[key]['ws'] and not unique_configs[key]['grpc']:
                                     unique_configs[key] = config
@@ -184,17 +213,16 @@ def main():
     print("📡 در حال تست سلامت کانفیگ‌ها...")
 
     for config in unique_configs.values():
-        latency = ping_server(config['host'], config['port'], timeout=2.0)
-        if latency and latency < HEALTH_THRESHOLD_MS:
+        latency = is_healthy(config)
+        if latency:
             config['latency'] = latency
             healthy_configs.append(config)
             print(f"✅ سالم: {config['host']}:{config['port']} ({latency:.1f} ms)")
         else:
-            print(f"❌ ناموفق: {config['host']}:{config['port']} (latency={latency if latency else 'N/A'})")
+            print(f"❌ ناموفق: {config['host']}:{config['port']} (latency=NA)")
 
     print(f"✅ تعداد کانفیگ‌های سالم: {len(healthy_configs)}")
 
-    # مرتب‌سازی
     prioritized = []
     other = []
 
@@ -243,7 +271,7 @@ def main():
 
     print(f"✅ خروجی نهایی در {OUTPUT_FILE} ذخیره شد.")
 
-    # لاگ‌گیری جزئی
+    # لاگ‌گیری
     with open("logs.txt", "w", encoding="utf-8") as f:
         f.write(f"📊 کانفیگ‌های منحصر به فرد: {len(unique_configs)}\n")
         f.write(f"✅ کانفیگ‌های سالم: {len(healthy_configs)}\n")
