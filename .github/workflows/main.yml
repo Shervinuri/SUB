@@ -1,4 +1,4 @@
-name: Shen V2Ray Collector (Diagnostic)
+name: Shen V2Ray Collector (TCP Test & Priority Sort)
 
 on:
   workflow_dispatch:
@@ -18,18 +18,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install Dependencies
-        # استفاده از نام رسمی پکیج برای اطمینان بیشتر
-        run: pip install requests PyYAML
-
-      # --- قدم جدید و تشخیصی ---
-      - name: Verify Installed Packages
-        run: pip list
-
-      - name: Download Clash for Testing
-        run: |
-          wget -O clash.gz https://github.com/Dreamacro/clash/releases/download/v1.11.1/clash-linux-amd64.gz
-          gzip -d clash.gz
-          chmod +x ./clash
+        run: pip install requests
 
       - name: Run The Collector Script
         id: run_script
@@ -40,5 +29,5 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add pure.md
-          git commit -m "✨ SHEN Collector Update | Found ${{ steps.run_script.outputs.node_count || 'some' }} premium nodes" || echo "No changes to commit"
+          git commit -m " 🪄 ☬SHΞN™ rifle reload | Found ${{ steps.run_script.outputs.node_count || 'some' }} premium nodes" || echo "No changes to commit"
           git push
