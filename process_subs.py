@@ -9,8 +9,8 @@ from urllib.parse import urlparse
 # --- تنظیمات ---
 SOURCE_URL = "https://raw.githubusercontent.com/Shervinuri/SUB/main/Source.txt"
 OUTPUT_FILE = "pure.md"
-MAX_CONFIGS = 300
-HEALTH_THRESHOLD_MS = 600
+MAX_CONFIGS = 700
+HEALTH_THRESHOLD_MS = 400
 REMARK_NAME = "☬SHΞN™"
 
 # --- الگوی استخراج کانفیگ ---
