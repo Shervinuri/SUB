@@ -1,54 +1,31 @@
-# نام ورک‌فلو
-name: Shen V2Ray Collector
+name: Shen V2Ray Collector (Ultra Simple)
 
 on:
-  # به شما اجازه می‌دهد این ورک‌فلو را به صورت دستی از تب Actions در گیت‌هاب اجرا کنید
   workflow_dispatch:
-
-  # اجرای زمان‌بندی شده
   schedule:
-    # این دستور هر 6 ساعت یک‌بار ورک‌فلو را اجرا می‌کند
     - cron: "0 */6 * * *"
 
 jobs:
   build:
-    # استفاده از آخرین نسخه اوبونتو برای اجرای عملیات
     runs-on: ubuntu-latest
-
     steps:
-      # مرحله ۱: دریافت کد از ریپازیتوری شما
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      # مرحله ۲: آماده‌سازی محیط پایتون
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      # مرحله ۳: نصب کتابخانه‌های مورد نیاز پایتون
       - name: Install Dependencies
-        run: pip install requests pyyaml
+        run: pip install requests
 
-      # مرحله ۴: دانلود ابزارهای لازم (Subconverter و Clash)
-      - name: Download Essential Tools
-        run: |
-          wget -O subconverter.tar.gz https://github.com/tindy2013/subconverter/releases/download/v0.8.0/subconverter_linux64.tar.gz
-          tar -zxvf subconverter.tar.gz
-          chmod +x ./subconverter/subconverter
+      # مرحله دانلود ابزار اضافه به طور کامل حذف شده است
 
-          # --- خط اصلاح شده ---
-          # لینک دانلود Clash با یک نسخه معتبر و پایدار جایگزین شد تا خطای 404 برطرف شود
-          wget -O clash.gz https://github.com/Dreamacro/clash/releases/download/v1.11.1/clash-linux-amd64.gz
-          gzip -d clash.gz
-          chmod +x ./clash
-
-      # مرحله ۵: اجرای اسکریپت اصلی پایتون
       - name: Run The Collector Script
         id: run_script
         run: python process_subs.py
 
-      # مرحله ۶: ذخیره و ارسال (Commit & Push) نتایج به ریپازیتوری
       - name: Commit and Push Results
         run: |
           git config --local user.email "action@github.com"
