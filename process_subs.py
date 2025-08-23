@@ -16,19 +16,16 @@ MAX_LATENCY = 400
 MAX_FINAL_NODES = 150
 MAX_WORKERS = 100
 
-# --- فیلترهای هوشمند بر اساس تحلیل شما ---
-# لیست رسمی رنج IP های کلادفلر (فقط IPv4)
+# --- فیلترهای هوشمند ---
 CLOUDFLARE_IPV4_RANGES = [
     "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
     "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
     "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
     "172.64.0.0/13", "131.0.72.0/22"
 ]
-# پورت‌های ترجیحی که در کانفیگ‌های خوب شما دیده شد
 PREFERRED_PORTS = {443, 8443, 2096, 2083, 2053, 80, 8080, 8880}
 
 def get_sub_links():
-    """لیست لینک‌های اشتراک را از فایل شما می‌خواند."""
     print("Fetching subscription links...")
     try:
         response = requests.get(SOURCE_URL, timeout=10)
@@ -41,7 +38,6 @@ def get_sub_links():
         return []
 
 def decode_base64_content(content):
-    """محتوای Base64 را با مدیریت خطا دیکد می‌کند."""
     try:
         content += '=' * (-len(content) % 4)
         return base64.b64decode(content).decode('utf-8')
@@ -49,46 +45,47 @@ def decode_base64_content(content):
         return None
 
 def parse_node_details(link):
-    """یک لینک را به صورت کامل解析 کرده و جزئیات آن را برمی‌گرداند."""
     details = {}
     try:
         if link.startswith('vless://'):
             parsed_url = urlparse(link)
+            # --- FIX: اطمینان از وجود هاست و پورت ---
+            if not parsed_url.hostname or not parsed_url.port: return None
             details['server'] = parsed_url.hostname
             details['port'] = parsed_url.port
             params = parse_qs(parsed_url.query)
             details['type'] = params.get('type', ['tcp'])[0]
-            details['security'] = params.get('security', ['none'])[0]
             return details
         elif link.startswith('vmess://'):
             decoded_json = json.loads(decode_base64_content(link.replace("vmess://", "")))
+            # --- FIX: اطمینان از وجود آدرس و پورت ---
+            if not decoded_json.get('add') or not decoded_json.get('port'): return None
             details['server'] = decoded_json.get('add')
             details['port'] = int(decoded_json.get('port'))
             details['type'] = decoded_json.get('net', 'tcp')
-            details['security'] = 'tls' if decoded_json.get('tls') == 'tls' else 'none'
             return details
     except Exception:
         return None
-    return None
+    return details
 
 def is_cloudflare_ip(ip_str):
-    """چک می‌کند آیا یک IP در رنج کلادفلر قرار دارد یا نه."""
+    # --- FIX: مدیریت ورودی‌های نامعتبر یا None ---
+    if not isinstance(ip_str, str):
+        return False
     try:
         ip = ipaddress.ip_address(ip_str)
         for cidr in CLOUDFLARE_IPV4_RANGES:
             if ip in ipaddress.ip_network(cidr):
                 return True
     except ValueError:
-        return False # اگر ورودی IP معتبر نباشد
+        return False
     return False
 
 def get_all_nodes(links):
-    """تمام کانفیگ‌های vless و vmess را از لینک‌ها استخراج می‌کند."""
     all_nodes = []
     seen_identifiers = set()
     for link in links:
         try:
-            # print(f"Processing link: {link[:40]}...") # لاگ اضافه، می‌توان غیرفعال کرد
             response = requests.get(link, timeout=15)
             content = response.text.strip()
             decoded_content = decode_base64_content(content) or content
@@ -96,7 +93,7 @@ def get_all_nodes(links):
                 line = line.strip()
                 if line.startswith(('vless://', 'vmess://')):
                     details = parse_node_details(line)
-                    if details and details.get('server') and details.get('port'):
+                    if details:
                         identifier = f"{details['server']}:{details['port']}"
                         if identifier not in seen_identifiers:
                             all_nodes.append(line)
@@ -107,17 +104,14 @@ def get_all_nodes(links):
     return all_nodes
 
 def pre_filter_nodes(nodes):
-    """کانفیگ‌ها را بر اساس الگوی موفق (کلادفلر، پورت و...) فیلتر اولیه می‌کند."""
-    print("Applying smart pre-filter based on your analysis...")
+    print("Applying smart pre-filter...")
     high_potential_nodes = []
     for link in nodes:
         details = parse_node_details(link)
         if not details:
             continue
         
-        # شرط اصلی: سرور باید IP کلادفلر باشد
         if is_cloudflare_ip(details.get('server')):
-            # شرط دوم: نوع پروتکل و پورت ترجیحی باشد
             if details.get('type') == 'ws' and details.get('port') in PREFERRED_PORTS:
                 high_potential_nodes.append(link)
 
@@ -125,10 +119,8 @@ def pre_filter_nodes(nodes):
     return high_potential_nodes
 
 def check_connectivity(node_link):
-    """با یک تست اتصال ساده TCP، سلامت و پینگ سرور را چک می‌کند."""
     details = parse_node_details(node_link)
-    if not details:
-        return None, None
+    if not details: return None, None
     server, port = details['server'], details['port']
     
     try:
@@ -139,14 +131,12 @@ def check_connectivity(node_link):
         if latency < MAX_LATENCY:
             print(f"  [SUCCESS] {server}:{port} -> Latency: {int(latency)}ms")
             return node_link, int(latency)
-    except (socket.timeout, socket.error):
+    except (socket.timeout, socket.error, OSError):
         pass
     return None, None
 
 def run_health_check(nodes):
-    """تست سلامت را به صورت موازی روی کانفیگ‌ها اجرا می‌کند."""
-    if not nodes:
-        return []
+    if not nodes: return []
     print(f"\nRunning health check on {len(nodes)} high-potential nodes...")
     healthy_nodes = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -159,7 +149,6 @@ def run_health_check(nodes):
     return healthy_nodes
 
 def generate_final_sub(nodes):
-    """کانفیگ‌های سالم را مرتب کرده، نامشان را تغییر داده و به فرمت نهایی تبدیل می‌کند."""
     print("Generating final subscription file...")
     nodes.sort(key=lambda x: x.get('latency', 9999))
     final_nodes = nodes[:MAX_FINAL_NODES]
