@@ -10,7 +10,7 @@ from collections import OrderedDict
 SOURCE_URL = "https://raw.githubusercontent.com/Shervinuri/SUB/main/Source.txt"
 OUTPUT_FILE = "pure.md"
 MAX_CONFIGS = 300
-HEALTH_THRESHOLD_MS = 350
+HEALTH_THRESHOLD_MS = 600  # افزایش از 350 به 600 برای پذیرش سرورهای دور
 REMARK_NAME = "☬SHΞN™"
 
 # --- الگوی استخراج کانفیگ ---
@@ -26,11 +26,11 @@ def decode_base64(s):
     except Exception:
         return s
 
-def sanitize_hostname(hostname):
+def safe_sanitize(hostname):
     try:
         return idna.encode(hostname).decode('ascii')
     except Exception:
-        return hostname  # در صورت خطا، حالت اصلی را نگه دار
+        return hostname
 
 def parse_vless_or_vmess(url):
     match = VLESS_PATTERN.match(url.strip())
@@ -46,12 +46,11 @@ def parse_vless_or_vmess(url):
         if len(server_parts) != 2:
             return None
         host, port = server_parts
-        host = sanitize_hostname(host)
+        host = safe_sanitize(host)
         try:
             port = int(port)
         except ValueError:
             return None
-        # استخراج پارامترهای اختیاری
         query_params = {}
         if params:
             for param in params.split('&'):
@@ -76,7 +75,7 @@ def parse_vless_or_vmess(url):
         params = match.group(2)
         decoded = decode_base64(raw)
         try:
-            data = eval(f'dict({decoded})')  # تبدیل string JSON-like به dict
+            data = eval(f'dict({decoded})')
         except Exception:
             return None
 
@@ -90,7 +89,7 @@ def parse_vless_or_vmess(url):
             port = int(port)
         except ValueError:
             return None
-        host = sanitize_hostname(host)
+        host = safe_sanitize(host)
 
         return {
             'type': 'vmess',
@@ -105,16 +104,26 @@ def parse_vless_or_vmess(url):
         }
     return None
 
-def ping_server(host, port, timeout=1.5):
+def ping_server(host, port, timeout=2.0):
     try:
+        # اول resolve کن
+        try:
+            socket.gethostbyname(host)
+        except:
+            return None
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
-        start_time = socket.gethrtime()  # Python 3.7+
-        sock.connect((host, port))
-        end_time = socket.gethrtime()
-        latency_ms = (end_time - start_time) * 1000
-        sock.close()
-        return latency_ms
+        start_time = socket.gethrtime()
+        try:
+            sock.connect((host, port))
+            end_time = socket.gethrtime()
+            latency_ms = (end_time - start_time) * 1000
+            sock.close()
+            return latency_ms
+        except Exception as e:
+            sock.close()
+            return None
     except Exception as e:
         return None
 
@@ -130,20 +139,22 @@ def main():
 
     print(f"📥 دریافت {len(links)} لینک ورودی")
 
-    # --- مرحله ۱: استخراج و حذف تکراری ---
+    unique_configs = {}
+
     for link in links:
         try:
             resp = requests.get(link, timeout=10)
             content = resp.text.strip()
 
-            # اگر Base64 باشد، تجزیه کن
-            if content.startswith('base64'):
-                content = decode_base64(content.split(',', 1)[1])
-            elif content.startswith('vmess://') or content.startswith('vless://'):
-                pass  # محتوای خام
-            else:
-                # شاید متن خام باشد
-                content = content
+            # تشخیص Base64 (حتی با پیشوند مثل data:text/plain;base64,)
+            if 'base64,' in content or 'base64;' in content:
+                try:
+                    # جدا کردن بخش base64
+                    parts = content.split(',', 1)
+                    if len(parts) > 1:
+                        content = decode_base64(parts[1])
+                except Exception:
+                    pass  # اگر خطا داشت، متن خام رو نگه دار
 
             # استخراج کانفیگ‌ها
             for line in content.splitlines():
@@ -157,9 +168,8 @@ def main():
                         if key not in unique_configs:
                             unique_configs[key] = config
                         else:
-                            # فقط اگر سرور/پورت یکسان باشد، جایگزین کن
+                            # اگر جدید ws/grpc باشه، جایگزین کن
                             if config['ws'] or config['grpc']:
-                                # اگر جدید ws/grpc باشد، جایگزین کن
                                 if not unique_configs[key]['ws'] and not unique_configs[key]['grpc']:
                                     unique_configs[key] = config
             print(f"✅ پردازش لینک: {link}")
@@ -170,12 +180,11 @@ def main():
 
     print(f"🗂️ تعداد کانفیگ‌های منحصر به فرد: {len(unique_configs)}")
 
-    # --- مرحله ۲: تست سلامت ---
     healthy_configs = []
     print("📡 در حال تست سلامت کانفیگ‌ها...")
 
     for config in unique_configs.values():
-        latency = ping_server(config['host'], config['port'], timeout=1.5)
+        latency = ping_server(config['host'], config['port'], timeout=2.0)
         if latency and latency < HEALTH_THRESHOLD_MS:
             config['latency'] = latency
             healthy_configs.append(config)
@@ -185,10 +194,7 @@ def main():
 
     print(f"✅ تعداد کانفیگ‌های سالم: {len(healthy_configs)}")
 
-    # --- مرحله ۳: مرتب‌سازی ---
-    print("🎯 در حال مرتب‌سازی کانفیگ‌ها...")
-
-    # دو دسته: اولویت ws/grpc → سایر
+    # مرتب‌سازی
     prioritized = []
     other = []
 
@@ -198,39 +204,54 @@ def main():
         else:
             other.append(c)
 
-    # مرتب‌سازی داخل هر دسته بر اساس پینگ
     prioritized.sort(key=lambda x: x['latency'])
     other.sort(key=lambda x: x['latency'])
 
-    # ترکیب: اول ws/grpc، سپس سایر
     sorted_configs = prioritized + other
-
-    # انتخاب حداکثر 300 کانفیگ
     selected_configs = sorted_configs[:MAX_CONFIGS]
+
     print(f"📊 انتخاب {len(selected_configs)} کانفیگ برتر")
 
-    # --- مرحله ۴: تولید خروجی ---
+    # تولید خروجی
     print("📤 در حال تولید خروجی نهایی...")
 
-    # تغییر Remark
-    for c in selected_configs:
-        c['remark'] = REMARK_NAME
+    if not selected_configs:
+        print("❌ هیچ کانفیگ سالمی یافت نشد!")
+        final_text = """# ❌ خطای سیستم: هیچ کانفیگ سالمی یافت نشد!
+        
+این مشکل معمولاً به دلایل زیر اتفاق می‌افتد:
+- منبع (Source.txt) خالی یا غیرقابل دسترس است.
+- تمام سرورها دسترسی ندارند (Firewall / IP Ban).
+- لینک‌ها کدگذاری شده‌اند و به درستی تجزیه نمی‌شوند.
 
-    # تولید لیست از URLهای اصلی (نه کدگذاری شده)
-    output_lines = []
-    for c in selected_configs:
-        output_lines.append(c['url'])
+📌 لطفاً بررسی کن:
+1. https://raw.githubusercontent.com/Shervinuri/SUB/main/Source.txt
+2. آیا فایل `Source.txt` موجود است؟
+3. آیا لینک‌های `vmess://` یا `vless://` دارد؟
 
-    final_text = '\n'.join(output_lines)
+✅ اگر مشکل حل نشد، از طریق GitHub Issues اطلاع بده."""
+    else:
+        for c in selected_configs:
+            c['remark'] = REMARK_NAME
+        output_lines = [c['url'] for c in selected_configs]
+        final_text = '\n'.join(output_lines)
 
-    # کدگذاری Base64
     encoded_content = base64.b64encode(final_text.encode('utf-8')).decode('utf-8')
 
-    # ذخیره در فایل
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
         f.write(encoded_content)
 
     print(f"✅ خروجی نهایی در {OUTPUT_FILE} ذخیره شد.")
+
+    # لاگ‌گیری جزئی
+    with open("logs.txt", "w", encoding="utf-8") as f:
+        f.write(f"📊 کانفیگ‌های منحصر به فرد: {len(unique_configs)}\n")
+        f.write(f"✅ کانفیگ‌های سالم: {len(healthy_configs)}\n")
+        f.write(f"📌 انتخاب شده: {len(selected_configs)}\n")
+        f.write("\n--- لیست سرورها ---\n")
+        for c in unique_configs.values():
+            status = "سالم" if c.get('latency') else "نازده"
+            f.write(f"{c['host']}:{c['port']} | {status} | {c['latency'] if c.get('latency') else 'N/A'} ms\n")
 
 if __name__ == "__main__":
     main()
