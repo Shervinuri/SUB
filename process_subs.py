@@ -3,8 +3,8 @@ import base64
 import re
 import socket
 import idna
+import ssl
 from urllib.parse import urlparse
-from collections import OrderedDict
 
 # --- تنظیمات ---
 SOURCE_URL = "https://raw.githubusercontent.com/Shervinuri/SUB/main/Source.txt"
@@ -15,7 +15,8 @@ REMARK_NAME = "☬SHΞN™"
 
 # --- الگوی استخراج کانفیگ ---
 VLESS_PATTERN = re.compile(r'^vless://([^#]+)#?(.*)$')
-VMESS_PATTERN = re.compile(r'^vmess://([^#]+)#?(.*)$')
+VMESS_PATTERN = re.
+compile(r'^vmess://([^#]+)#?(.*)$')
 
 # --- لیست کانفیگ‌های منحصر به فرد ---
 unique_configs = {}
@@ -64,6 +65,7 @@ def parse_vless_or_vmess(url):
             'path': query_params.get('path', ''),
             'ws': 'ws' in query_params.get('security', ''),
             'grpc': 'grpc' in query_params.get('security', ''),
+            'sni': query_params.get('sni', host),
             'latency': None,
             'remark': query_params.get('remark', REMARK_NAME),
             'url': url
@@ -83,6 +85,7 @@ def parse_vless_or_vmess(url):
         port = data.get('port')
         network = data.get('net', '')
         path = data.get('path', '')
+        sni = data.get('sni', host)
         if not host or not port:
             return None
         try:
@@ -98,64 +101,47 @@ def parse_vless_or_vmess(url):
             'path': path,
             'ws': network == 'ws',
             'grpc': network == 'grpc',
+            'sni': sni,
             'latency': None,
             'remark': data.get('ps', REMARK_NAME),
             'url': url
         }
     return None
 
-def ping_server(host, port, timeout=2.0):
+def test_with_sni(host, port, sni, timeout=3.0):
     try:
-        try:
-            socket.gethostbyname(host)
-        except:
-            return None
-
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
+        sock.connect((host, port))
+
+        context = ssl.create_default_context()
+        context.check_hostname = True
+        context.verify_mode = ssl.CERT_REQUIRED
+        context.set_servername_callback(lambda sock, server_name: None)  # قرار دادن SNI
+
+        ssl_sock = context.wrap_socket(sock, server_hostname=sni)
         start_time = socket.gethrtime()
+
         try:
-            sock.connect((host, port))
+            ssl_sock.write(b"GET / HTTP/1.1\r\nHost: " + sni.encode() + b"\r\nConnection: close\r\n\r\n")
+            response = ssl_sock.read(1024)
             end_time = socket.gethrtime()
             latency_ms = (end_time - start_time) * 1000
-            sock.close()
+            ssl_sock.close()
             return latency_ms
         except Exception as e:
-            sock.close()
+            ssl_sock.close()
             return None
-    except Exception as e:
-        return None
-
-def http_test(host, port, path, timeout=3.0):
-    try:
-        # ساخت URL
-        scheme = "https" if port == 443 else "http"
-        url = f"{scheme}://{host}:{port}{path}"
-
-        # ارسال GET
-        resp = requests.get(url, timeout=timeout, verify=False, allow_redirects=True)
-        if resp.status_code in [200, 301, 302]:
-            return (resp.elapsed.total_seconds() * 1000)
-        return None
     except Exception as e:
         return None
 
 def is_healthy(config):
     host = config['host']
     port = config['port']
-    path = config['path']
+    sni = config['sni']
 
-    # اگر ws یا grpc باشه → تست HTTP
-    if config['ws'] or config['grpc']:
-        # تست با path
-        test_path = path or "/"
-        latency = http_test(host, port, test_path, timeout=3.0)
-        if latency and latency < HEALTH_THRESHOLD_MS:
-            return latency
-        return None
-
-    # اگر tcp باشه → تست ping
-    latency = ping_server(host, port, timeout=2.0)
+    # تست با SNI
+    latency = test_with_sni(host, port, sni, timeout=3.0)
     if latency and latency < HEALTH_THRESHOLD_MS:
         return latency
     return None
@@ -240,24 +226,9 @@ def main():
 
     print(f"📊 انتخاب {len(selected_configs)} کانفیگ برتر")
 
-    # تولید خروجی
-    print("📤 در حال تولید خروجی نهایی...")
-
     if not selected_configs:
         print("❌ هیچ کانفیگ سالمی یافت نشد!")
-        final_text = """# ❌ خطای سیستم: هیچ کانفیگ سالمی یافت نشد!
-        
-این مشکل معمولاً به دلایل زیر اتفاق می‌افتد:
-- منبع (Source.txt) خالی یا غیرقابل دسترس است.
-- تمام سرورها دسترسی ندارند (Firewall / IP Ban).
-- لینک‌ها کدگذاری شده‌اند و به درستی تجزیه نمی‌شوند.
-
-📌 لطفاً بررسی کن:
-1. https://raw.githubusercontent.com/Shervinuri/SUB/main/Source.txt
-2. آیا فایل `Source.txt` موجود است؟
-3. آیا لینک‌های `vmess://` یا `vless://` دارد؟
-
-✅ اگر مشکل حل نشد، از طریق GitHub Issues اطلاع بده."""
+        final_text = "# ❌ خطای سیستم: هیچ کانفیگ سالمی یافت نشد!"
     else:
         for c in selected_configs:
             c['remark'] = REMARK_NAME
@@ -270,16 +241,6 @@ def main():
         f.write(encoded_content)
 
     print(f"✅ خروجی نهایی در {OUTPUT_FILE} ذخیره شد.")
-
-    # لاگ‌گیری
-    with open("logs.txt", "w", encoding="utf-8") as f:
-        f.write(f"📊 کانفیگ‌های منحصر به فرد: {len(unique_configs)}\n")
-        f.write(f"✅ کانفیگ‌های سالم: {len(healthy_configs)}\n")
-        f.write(f"📌 انتخاب شده: {len(selected_configs)}\n")
-        f.write("\n--- لیست سرورها ---\n")
-        for c in unique_configs.values():
-            status = "سالم" if c.get('latency') else "نازده"
-            f.write(f"{c['host']}:{c['port']} | {status} | {c['latency'] if c.get('latency') else 'N/A'} ms\n")
 
 if __name__ == "__main__":
     main()
