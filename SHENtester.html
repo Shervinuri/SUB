@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Shen Browser Upload/Download Test (Subtitle Files)</title>
+<style>
+  :root{--bg:#111827;--card:#1f2937;--text:#e5e7eb;--muted:#9ca3af;--accent:#22d3ee;--ok:#34d399;--warn:#f59e0b;--err:#ef4444}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial}
+  .wrap{max-width:880px;margin:auto;padding:24px}
+  h1{font-size:1.4rem;margin:0 0 14px}
+  p{color:var(--muted);margin:0 0 18px}
+  .card{background:var(--card);border:1px solid #334155;border-radius:14px;padding:18px;margin:16px 0}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .btn{appearance:none;border:1px solid #374151;background:#0f172a;color:#e5e7eb;border-radius:12px;padding:10px 14px;cursor:pointer}
+  .btn[disabled]{opacity:.5;cursor:not-allowed}
+  .btn.primary{border-color:transparent;background:linear-gradient(135deg,#06b6d4,#6366f1)}
+  .btn.success{background:#065f46;border-color:#065f46}
+  .muted{color:var(--muted);font-size:.9rem}
+  .drop{border:2px dashed #374151;border-radius:14px;padding:24px;text-align:center;transition:.2s background,border-color}
+  .drop.drag{background:#0b1220;border-color:var(--accent)}
+  input[type="file"]{display:none}
+  .meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+  .meta div{background:#0b1220;border:1px solid #273044;border-radius:10px;padding:8px 10px;font-size:.92rem}
+  pre{background:#0b1220;border:1px solid #273044;border-radius:12px;padding:12px;overflow:auto;max-height:220px}
+  .tag{display:inline-block;background:#0b1220;border:1px solid #273044;border-radius:999px;padding:4px 10px;font-size:.85rem;margin:4px 2px}
+  .alert{padding:12px;border-radius:12px;margin:12px 0}
+  .alert.ok{background:#052e2b;border:1px solid #0b7a6f}
+  .alert.warn{background:#3b2a06;border:1px solid #8a5a04}
+  .alert.err{background:#3b0a0a;border:1px solid #8a1c1c}
+  .foot{margin-top:18px;font-size:.85rem;color:var(--muted)}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>تست آپلود/دانلود محلی زیرنویس در مرورگر</h1>
+    <p>این ابزار بررسی می‌کند که آیا مرورگر شما می‌تواند فایل زیرنویس را <strong>محلی</strong> بخواند و سپس همان محتوا را به‌صورت فایل (Blob) برای دانلود بسازد.</p>
+
+    <div class="card">
+      <div class="row">
+        <label class="btn" for="fileInput">انتخاب فایل زیرنویس</label>
+        <button id="clearBtn" class="btn" disabled>پاک‌سازی</button>
+        <button id="downloadBtn" class="btn primary" disabled>دانلود کپی فایل</button>
+      </div>
+
+      <input id="fileInput" type="file" accept=".srt,.vtt,.ass,.ssa,text/plain" />
+
+      <div id="drop" class="drop" aria-label="drag-and-drop-area">
+        فایل‌های .srt .vtt .ass .ssa را اینجا بکشید و رها کنید
+      </div>
+
+      <div id="compat" class="alert ok" style="display:none"></div>
+      <div id="warn" class="alert warn" style="display:none"></div>
+      <div id="err" class="alert err" style="display:none"></div>
+
+      <div id="meta" class="meta" style="display:none"></div>
+
+      <div style="margin-top:12px">
+        <span class="tag" id="tagFileApi">File API</span>
+        <span class="tag" id="tagReader">FileReader</span>
+        <span class="tag" id="tagBlob">Blob</span>
+        <span class="tag" id="tagURL">URL.createObjectURL</span>
+        <span class="tag" id="tagDownload">download attribute</span>
+      </div>
+
+      <div id="previewWrap" style="display:none;margin-top:12px">
+        <div class="muted">پیش‌نمایش چند خط اول (برای اطمینان از خوانش محلی):</div>
+        <pre id="preview"></pre>
+      </div>
+
+      <div class="foot">
+        هیچ داده‌ای به سرور ارسال نمی‌شود؛ همهٔ عملیات در مرورگر شما انجام می‌شود. برای اطمینان می‌توانید Network تب DevTools را بررسی کنید.
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  // --- Capability check tags ---
+  const tag = (id, ok) => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.style.borderColor = ok ? "#14532d" : "#7f1d1d";
+    el.style.background = ok ? "#052e2b" : "#3b0a0a";
+    el.style.color = ok ? "#d1fae5" : "#fecaca";
+    el.textContent += ok ? " ✓" : " ✗";
+  };
+
+  const hasFile = !!window.File;
+  const hasReader = !!window.FileReader;
+  const hasBlob = !!window.Blob;
+  const hasURL = !!(window.URL && URL.createObjectURL);
+  const testAnchor = document.createElement('a');
+  const hasDownload = 'download' in testAnchor;
+
+  tag('tagFileApi', hasFile);
+  tag('tagReader', hasReader);
+  tag('tagBlob', hasBlob);
+  tag('tagURL', hasURL);
+  tag('tagDownload', hasDownload);
+
+  const compat = document.getElementById('compat');
+  const warn = document.getElementById('warn');
+  const err = document.getElementById('err');
+
+  const show = (el,msg)=>{ el.style.display='block'; el.textContent = msg; };
+  const hideAllAlerts = ()=>{ compat.style.display=warn.style.display=err.style.display='none'; };
+
+  // General elements
+  const fileInput = document.getElementById('fileInput');
+  const drop = document.getElementById('drop');
+  const clearBtn = document.getElementById('clearBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const meta = document.getElementById('meta');
+  const previewWrap = document.getElementById('previewWrap');
+  const preview = document.getElementById('preview');
+
+  // State
+  let file = null;
+  let textContent = '';
+  let objectUrl = null;
+
+  // Compatibility banner
+  if (hasFile && hasReader && hasBlob && hasURL && hasDownload) {
+    show(compat, 'مرورگر شما از آپلود محلی و دانلود Blob پشتیبانی می‌کند.');
+  } else {
+    show(warn, 'برخی قابلیت‌ها پشتیبانی نمی‌شود. لطفاً در Chrome/Firefox تست کنید یا از مرورگرهای درون‌برنامه‌ای (مثل مرورگر تلگرام) استفاده نکنید.');
+  }
+
+  // Helpers
+  function resetState() {
+    file = null;
+    textContent = '';
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+      objectUrl = null;
+    }
+    fileInput.value = '';
+    meta.style.display = 'none';
+    meta.innerHTML = '';
+    previewWrap.style.display = 'none';
+    preview.textContent = '';
+    downloadBtn.disabled = true;
+    clearBtn.disabled = true;
+    hideAllAlerts();
+    if (hasFile && hasReader && hasBlob && hasURL && hasDownload) {
+      show(compat, 'مرورگر شما از آپلود محلی و دانلود Blob پشتیبانی می‌کند.');
+    }
+  }
+
+  function readableSize(bytes){
+    const u = ['B','KB','MB','GB'];
+    let i=0, n=bytes;
+    while(n>=1024 && i<u.length-1){ n/=1024; i++; }
+    return n.toFixed(2)+' '+u[i];
+  }
+
+  function setMeta(f, textSample){
+    meta.style.display='grid';
+    meta.innerHTML = `
+      <div>نام فایل: <strong>${f.name}</strong></div>
+      <div>حجم: <strong>${readableSize(f.size)}</strong></div>
+      <div>نوع/پسوند: <strong>${f.type || 'text/plain'} | .${(f.name.split('.').pop()||'').toLowerCase()}</strong></div>
+      <div>تعداد کاراکتر خوانده‌شده: <strong>${textContent.length}</strong></div>
+    `;
+    previewWrap.style.display = 'block';
+    preview.textContent = textSample;
+  }
+
+  function handleFiles(fileList){
+    hideAllAlerts();
+    const f = fileList && fileList[0];
+    if(!f){ return; }
+
+    // Basic extension check
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    const allowed = ['srt','vtt','ass','ssa','txt'];
+    if(!allowed.includes(ext)){
+      show(warn, `پسوند فایل (${ext}) شناخته‌شده نیست. ادامه می‌دهیم اما بهتر است از .srt یا .vtt استفاده کنید.`);
+    }
+
+    if(!hasReader){
+      show(err,'مرورگر شما FileReader را پشتیبانی نمی‌کند.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onerror = () => show(err, 'خطا در خواندن فایل. لطفاً دوباره تلاش کنید.');
+    reader.onload = () => {
+      textContent = reader.result || '';
+      file = f;
+
+      // Sample: first ~40 lines for preview
+      const lines = textContent.split(/\r?\n/);
+      const sample = lines.slice(0, 40).join('\n');
+
+      setMeta(f, sample);
+      clearBtn.disabled = false;
+
+      // Prepare downloadable Blob (same content)
+      const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+      if(objectUrl) URL.revokeObjectURL(objectUrl);
+      objectUrl = URL.createObjectURL(blob);
+
+      downloadBtn.disabled = false;
+      show(compat, 'فایل با موفقیت به‌صورت محلی خوانده شد. می‌توانید نسخهٔ کپی را دانلود کنید.');
+    };
+    reader.readAsText(f, 'utf-8');
+  }
+
+  // Events: input file
+  fileInput.addEventListener('change', e => {
+    if(e.target.files && e.target.files.length) handleFiles(e.target.files);
+  });
+
+  // Drag & drop
+  ;['dragenter','dragover'].forEach(ev=>{
+    drop.addEventListener(ev, e=>{
+      e.preventDefault(); e.stopPropagation();
+      drop.classList.add('drag');
+    }, false);
+  });
+  ;['dragleave','drop'].forEach(ev=>{
+    drop.addEventListener(ev, e=>{
+      e.preventDefault(); e.stopPropagation();
+      drop.classList.remove('drag');
+    }, false);
+  });
+  drop.addEventListener('drop', e=>{
+    const dt = e.dataTransfer;
+    if(dt && dt.files && dt.files.length) handleFiles(dt.files);
+  });
+
+  // Clear
+  clearBtn.addEventListener('click', resetState);
+
+  // Download
+  downloadBtn.addEventListener('click', ()=>{
+    if(!file || !objectUrl){ return; }
+    const a = document.createElement('a');
+    const ext = (file.name.includes('.') ? '.'+file.name.split('.').pop() : '.txt');
+    const name = file.name.replace(/\.[^/.]+$/, '') + '-copy' + ext;
+    a.href = objectUrl;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // NOTE: objectUrl را بلافاصله revoke نمی‌کنیم تا برخی مرورگرها دانلود را قطع نکنند.
+    setTimeout(()=>{ if(objectUrl){ URL.revokeObjectURL(objectUrl); objectUrl=null; } }, 4000);
+  });
+
+  // Initial state
+  resetState();
+
+  // In-app browser notice (Telegram/Instagram, etc.)
+  const ua = navigator.userAgent.toLowerCase();
+  if(ua.includes('telegram') || ua.includes('wv)') || ua.includes('instagram')){
+    show(warn,'به نظر می‌رسد در مرورگر درون‌برنامه‌ای هستید. برای اطمینان از دانلود صحیح، صفحه را در Chrome یا Firefox باز کنید.');
+  }
+})();
+</script>
+</body>
+</html>
