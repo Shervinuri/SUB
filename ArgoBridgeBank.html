@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Argo Bridge - SHΞN</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #020617; /* Slate 950 */
+            color: #f8fafc;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            user-select: none;
+            touch-action: none; /* Prevent browser swipe gestures */
+        }
+
+        /* Card Container */
+        .card-container {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            width: 100%;
+            perspective: 1000px;
+            overflow: hidden;
+        }
+
+        /* The Card */
+        .card {
+            width: 85%;
+            max-width: 380px;
+            height: 60vh;
+            background: linear-gradient(145deg, #1e293b, #0f172a);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 24px;
+            position: absolute;
+            cursor: grab;
+            /* Default State */
+            transform: translate(0, 0) rotate(0deg);
+            opacity: 1;
+            /* GPU Acceleration */
+            will-change: transform, opacity;
+        }
+
+        .card:active {
+            cursor: grabbing;
+        }
+
+        /* Copied State Styling */
+        .card.copied-style {
+            background: #1e293b !important;
+            border-color: #10b981; /* Green border */
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+        }
+        .card.copied-style .bridge-code {
+            color: #64748b; /* Gray text */
+            opacity: 0.5;
+            border-color: #10b981;
+        }
+        .card.copied-style .status-text {
+            color: #10b981; /* Green Text */
+        }
+
+        /* Label Style */
+        .shen-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 800;
+            font-size: 1.1rem;
+            letter-spacing: 2px;
+            background: -webkit-linear-gradient(45deg, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 20px rgba(56, 189, 248, 0.3);
+        }
+
+        /* Code Area */
+        .bridge-code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            line-height: 1.5;
+            color: #bae6fd; /* Sky 200 */
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px dashed rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 16px;
+            width: 100%;
+            height: 70%;
+            overflow-y: auto;
+            word-break: break-all;
+            white-space: pre-wrap;
+            pointer-events: none;
+            transition: color 0.3s;
+        }
+
+        /* Toast */
+        #toast {
+            position: fixed;
+            top: 25px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100px);
+            background: #10b981;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 999px;
+            font-weight: 600;
+            box-shadow: 0 10px 15px rgba(0,0,0,0.5);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            pointer-events: none;
+        }
+        #toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* Animations */
+        .animate-reset {
+            transition: transform 0.3s ease-out, opacity 0.3s ease-in;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Toast Notification -->
+    <div id="toast">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+        <span>Copied Successfully</span>
+    </div>
+
+    <!-- Header -->
+    <div class="w-full p-6 flex justify-between items-center z-10">
+        <div>
+            <h1 class="text-sm font-bold text-slate-400 tracking-widest">ARGO bridge bank</h1>
+        </div>
+        <div class="bg-slate-900 border border-slate-700 px-3 py-1 rounded-md text-sky-500 text-xs font-mono shadow-inner" id="counter">
+            -- / --
+        </div>
+    </div>
+
+    <!-- Card Area -->
+    <div class="card-container">
+        <div class="card" id="card">
+            <!-- Header inside Card -->
+            <div class="w-full flex justify-between items-center mb-4 border-b border-white/5 pb-3">
+                <div class="shen-label">☬SHΞN™</div>
+                <svg class="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+            </div>
+            
+            <!-- Code Content -->
+            <div class="bridge-code" id="codeText">Loading data...</div>
+            
+            <!-- Footer inside Card -->
+            <div class="mt-4 flex items-center justify-center gap-2 text-slate-400 text-xs uppercase tracking-wider status-text" id="statusText">
+                <svg class="w-4 h-4 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
+                <span>Tap to Copy</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="flex justify-center items-center gap-12 mb-8 w-full z-10">
+        <button onclick="handleBtnSwipe('left')" class="p-4 rounded-full bg-slate-800/50 border border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-white transition active:scale-90">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+        </button>
+        <button onclick="handleBtnSwipe('right')" class="p-4 rounded-full bg-slate-800/50 border border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-white transition active:scale-90">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+        </button>
+    </div>
+
+    <!-- Footer -->
+    <div class="text-center pb-4 text-[10px] text-slate-700 font-mono">
+        ☬ Exclusive SHΞN™ made
+    </div>
+
+    <script>
+        const bridges = [
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzEsOgjAAANG7dCuJLSaKJiwQAVuLiKJB
+dhQqKUpRkJ/Gu8t+3nxBy6talBKskAKe8fAo
+4xSsAB9IlxRLyNR9y0w8x3dLUJN8opCoUYiF
+J0jDi8vAVPtNi7E54RrLdZtIX3i5D90Z1IEC
+apHJ+N1UfFy61tnEBpneN02QHXy+wL2L7BRd
+Ha9zbtqRIAM2WhTSDgXX5eNsCMv4OJeAym2p
+OSVNyeSZ0xvcsz6HGO3yomPDrgpe/XqEmQ5+
+f0Z+Q40=
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzM0OgiAAAOB34VoH1LSfrUOiFpQpczXz
+BuKKUqwgy1rvXt8DfB/QVXctWwVm1hBcWV+3
+TIAZqHryLJsp5Pa24wh7+BLKDSLvIid2kWOZ
+SNIwR3hcbeWmcWuBsMbK70pFZXKmMHbgHAyB
+lkfFzONe/cs4PCBMA+Jqm8emKF/JW3PltVEW
+Hm/OYuDTAO7Pad3uopsFXSie+LRITZK+Mt+g
+1aiwDuPB0tulgZqMennJkQNXVsTCtblOMkHB
+9wcdx0JK
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzNFOwjAUANB/6askli0ikPAALbLedI4q
+yuCt6zq4tAzTzc1p/Hc9H3B+SGdDg7eazMcj
+8qEHf9MlmRM7QG+uM1pEz13BxES4NUoG38cc
+omMuMEPoD1Hb6I0/y+uDL5loRL3qTK0wuyia
+xnRBRqTBU63bz2D/y3T9xoTiycu2nO5d9dRN
+qvDlwLEMTQ9LW1gfz1J6t8seK5k4qpU4HXjs
+0Zwx4Zv7aRzeX5eyHcwuIN+PRcEvCiSVsM1X
+kC7I7x9dCkMY
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzNtugjAAANB/6bMJQiYREx4MVGxXMWSZ
+Yt/KvVQuoy2MLvt3fT85f2AuJ8mHHhzsDRjZ
++hxYAQ6gXPGSd942c+I5C5CLBOQkwIam2KEp
+4leOW5qeFIuKXdHt9cPxFOILzyNvLd4+DhNT
+Jb4PNkDyumdKT+W7vcDvAEHm2rZVznqou20Q
+zcZtmKjldRS3lYhQYtiR6XyhiWyPHB53jfno
+U5RRZG7ViYlfkbOvRX/e24XQ0VI/oaVjR5HM
+evjg/wWtv0aqBcv/
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzE1vgjAYAOD/0qseKiZETDjY6qCNfNS5
+yLhVbeAFWoFqlS377/P4XJ5f5NRo4WbQejFH
+vZy6m7yiNVITf150gM9e6s6U+azdwZ7yn7Lg
+XlkwyIDr74LA23ivg6mcmGWGuIsRkDUCJ0sc
+ojmyUBl5f4zqXSY7QRn5pHA43VnhOpG/hi/f
+zvxT2sW4iY84yY2Kyk096xtJHxsgbQsfg/SC
+4MBfo9V6mettnUbV0NPVcHRbklRZp0yERxGG
+6O8fXhVEKA==
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzNsOwTAAANB/6SuJGWaTeNAaWh02I1vf
+ukuobXWZ1Ur8O88nOR+g8kctrhJM+l1w47q8
+8gxMQK7JK60cIzE3KkHYwoUrKCJvFhGTRVhs
+xd9XWZ1W/RetHM00rrGEKpW+2F58wxsYU9AF
+tThJ/mwe+b/03BhhHw3peBnDpMGrcDA72Aq6
+i6SBoeXE7tEKFA+Ceyb15lSufXye7ai67Pni
+QEeI9Bhris7QsO3SC6VZzFnEqUP4ub3TFkbg
++wNICEM6
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzE1PgzAYAOD/0qs7IAqGJRwabLXdZE7D
+hN6gdMtLx0egwFrjf3f3J88vWtQ4Qd+h7eMG
+DaW99mWNtkhZvso28io/XaqEhUwT2CfciZz7
+ImdwAB5K37gip43o5Fy1J4/BCvItsvXdp69H
+dz7GMdqgCS5daeZR3dsPkiWMZqfgfZK8/pEP
+4Ojttu5aNrqhMHl2CZpv84T7r2fxIq8aA8Gz
+NtqXu2II9oGYOaVVdMaHnlmlihAvqY0a/Vl6
+hJEsRn//yz1GJguQwGu/
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzM1ugjAAAOB36VUS+RENJhwQobaI0Jio
+7a2WjlWhNfIznNm7b9ntO31vMMpnp4wGa8cC
+D/5qDK/AGsgX/hJtYF/dw3iN0RLdE7WP8Te7
+YJddkCrUv73KO9lVSwfqTg5VqEN6MwpNVHEj
+du7ZIbBAp2rN++Ep/9o8ITFKIyHLOSla3U8r
+scrhtmlgyj+y2pDxuLt9MlpySR/7bBGpKGGw
+32oY4MA/VjNzokZoKFh9HgK2cyDGmZ8uuinx
+cRSG4OcXTJxENw==
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzM1ugjAAAOB36VWTYTeJmHAoDWoriGXZ
+RG4tNLNIi6H8iIvvrvcv3z8YZGtVY8B6MQc3
+PtUNL8EayImOhfYcAQ+DwMQl11BFmD7yjMI8
+IypRtJI6h2f4e4/023wTS0wwFIappGJO/On4
+YA6s+jO861v5LuOQYbLbmOhHC0ekt3Ljnkya
+F6yW6V7zWMCGrk4Xl6NsVoX7Eakg+bAXL0BU
+D4cam23C+i98nvGy7co6XNoR3wM09ccl3yLf
+B88XX1VDwwvn//
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzN1ugjAAQOF36e1M5EfJMPHCFNBWJlRs
+AtwVKKWoZepE22XvPq7Pl/MLRn5/yEGBlT0D
+30xfBtaAFeAav+qrb1XOYawg8tA5lDHEpsyx
+U+ZIJhKbxpm6WzwrFyskX7Le+rqZ7CEgpiXr
+NZiBhxSK/TzvfFp+hQVEBKaBldr7IITChLcP
+aHqa7XCveUxFmxSEKDrMWYMvi5NA3SbJ4loP
+y/eejhE/ftpuHNE0YlnZWfZmC/287d43oby5
+lYC/fwPUQqo=
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzEkOgjAUANC7dKuJFYxT4oLUgaKiBQdg
+R22VH6QIMhvvrvuX90GVzN+QKjQf9tErbJ9p
+KNAcydaqb8kMc82uOKFjGq9gR6wu8Cwt8Cgc
+wIq5LpRUa52bacmTC6ZQw20za8Xf20vW3dli
+gfroDQ8VFmUu/+1+5RPKlizZn4osjiJ30NVH
+KeqtYTtOYvtVYTapzDTNFM2RTK/ug0bGFvsg
+zr1sQtXIk11rEHUnOHCN8pWDg09XHbNIOM2Y
+U/T9AcetRiAWR//
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzFEPQkAAAOD/cq+1hWi0ebBL3KUzqU3e
+Tkdd4ozQaf33vH/7vmDI246LGmzVJWiofAnK
+wBbkEo+3ylIyjQwZRBtUujyAeEoTrKUJ4iHH
+gnlqmfonlfrXPlvjGvGR3zxLstmTXTQVkW2D
+Jej4vabvvs3n9uheINo9S9iZopeWrsGYBEpi
+NCtM1ca4E/GYaDDqZxboldFKh7uOqTlMF3H4
+mftrvBgPUMh9AR9hMblm5A9J5b1rhTBGjjb4
+/QE5rUTx
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzF8TgTAAAPDvslfuWkXkzktJNn8SJ+qt
+zcrSKpXtcL4777/7fYBkbcfrCsz0IWjSV1mn
+VzAD7IUVFTYkxk4SF1no7vGNi9/JBRvJBfGA
+YxULrIhfyo34myPqUOVIWoU8KEK4NeEcDEHH
+8yrtny37l1vv5KJw4fm1WOh0SW45yVwxWd8e
+5kEcxwPZ62daaOWTZivPbkYDhXK2d8zWdMZl
+EqvCekPbOgSatu6T3TKLI8O3www2jyiP2HQO
+vj95JUND
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzFETgTAAAOD/slfu1Ai588BwtmpdzJne
+SqlRK0q1nP/O9wO+D2jiVyUKCRb6EJSByoog
+AgsQK9Jec1MLIW1ChKf4sRU2Ir3PCfQ5Fq4g
+6YVnXXiuUzs3sgjhCst1c5WecO+e5oy1JRiC
+SqQyqN+v+F862xPCHnrfTqTI5xsuk9WY4YFl
+9QGhKnXqvWHOSqbCdcJjZblRi5MNos/J2aTH
+VeYZ9q671Dt4aDWrZd0T5tRn7kh3GnirWLEE
+3x+ExUQN
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzDsOgjAAANC7dNUB0BAxcdAqpE0tQlQ+
+G7VIiwrylxrvLvvL+4I+rRtZFmCtz8E7GZ9l
+wsEapCMebi9LYwbtGUQmehwkgVjFITbiEElX
+YpMFQuPFpYsMq0VykDfHGvlk6d5Td2+zAXPQ
+yKxI2q5Op/J4iCDy4JsPM1+QO1ouatH66pLv
+MrscqmJh9mfLF9lKh7YbaqtPhsSWdk3QK72k
+mOSJw3J3O14NwmxSORUMKCf1Jz7qkaNeJ/D7
+A2N4RHM=
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwVzctygjAYQOF3yVYXEmodnHEBxMEEYod6
+Lbtwq38hYAOECZ2+u7o/850/pAvVQdugtTVH
+d2HqVuRojQrDxkw6ixTvderTd1ptIfLZlFwZ
+Tq4UPoDZX42nhc2HVJ4XFEbIAsfkz3ZP4qmM
+Nxs0Rx18N6IfVPEk+Tb2qccrNUwkdA9LVnF5
+NlGripMtAk4yLywvlzdpfi2ywquDC66TlPqk
+Z1Nm/fQ5NJJYngpblY72540ecVD2uK539w6i
+1+7/AVdaRDA=
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwdzM1ugjAAAOB36VUS+RENJhwQobaI0Jio
+7a2WjlWhNfIznNm7b9ntO31vMMpnp4wGa8cC
+D/5qDK/AGsgX/hJtYF/dw3iN0RLdE7WP8Te7
+YJddkCrUv73KO9lVSwfqTg5VqEN6MwpNVHEj
+du7ZIbBAp2rN++Ep/9o8ITFKIyHLOSla3U8r
+scrhtmlgyj+y2pDxuLt9MlpySR/7bBGpKGGw
+32oY4MA/VjNzokZoKFh9HgK2cyDGmZ8uuinx
+cRSG4OcXTJxENw==
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwVzEGOgjAUANC7dG0iIJpo4qKpBFu1iEqs
+7IBW+GhB6VTUiXd3Zv2S94seqjPQNmjmDtAt
+e13bTKIZUi/WF3rq5B5/5IRO6CWANWHvVDAv
+FRQiYG6x3N3lctfK/dimIv73Ph8xh9atwxd8
+igbIQNlkP7ZTf+UmSAjFRI/iKsLvkB+1Jd65
+eob7RixkPUygHJto1Z8pP5RRaDAE2MIm8XHp
+d71eHbOaPYmqwHTisrU6NlolJ1fe60rlhT9H
+ny9EvUT4
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzN1OgzAYANB36a1LQASXLtmFK4htGK4j
+CuOOnwKfCDRAu4HZu7v7k/OHtBgnGHq0e94g
+mS2/Q1aiHRILuxYdNnMr1Dmhr7T1ICBsTRNm
+pQmFT2Ba9KFZWJO6WHimcIXCx0v5sKHL14rv
+92iDJqj7bFajeJRH70IoJ8GhTJzxrHTMec2G
+bYSJmdiie9Ft+xG7tjQaW0nzJy5r2rydnO9W
+RJhV6+LSL8BFH1C3A2ObK/8s3w/+k0yNoInm
+m4fu/0UTQ5o=
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzNFugjAUANB/6etMph2bYsLDpEzbIYRE
+JvLGbaHeMuoAweCyf5/vJ+eXjGXX48WS9WJG
+forp+1IosiblJG6ycedAoxF8/sbrAENf3PNM0
+DzjGKNwwG5a+ZJTaU8DNF9zjjeUW3dSDx+x5
+F4lnkdmpEdti+vQlY92H6Q+T9i53y9Ce9hhA
+Y6oo9I3Jl/RIXOrRrWAm9SY5TGATqWaa2iWz
+LnaiBumVf0cP20/PqWLbKI9Px9gF+uwHd+Tr
+HpdeeTvH3+HRVwru/
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwVzN3KgjAAANB32XWQfxUG38UyoW22z1LJ
+vNuc2qy0XE4sevfq+sB5AV10SrYNWJoTcGPj
+pWUCLEEx4iG/uga3qOYemqOzLwMPP7MUW1mK
+5L/EKrdFyw5mI8ZZzS3j5wO3sYHq1qBr6oIJ
+ULJq2KPvim+59RMPQRTpjbefOrCOdTjt8zgJ
+k/0CP2xCJCNBdSXb07nUkZxB6cM7T6g6OrF5
+u/Rp5a4EJANUWSmijgRDebCcNIx3O2r7+R94
+fwAIgUMV
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwVzNtugjAAANB/6bMJLcMLJj50bWVtpMa4
+AeENCprKoMqlBMz+Xfd8kvMEtmw7bRqwRQtw
+z6ZfkxVgC8pJjKr2Ye5KmxO+4hXTByLmNBFu
+mnB91MIWzR7lLmrVeVkXsffvY/4hIL8ZKKn0
+wQJ0+tpk/dCW7zJkJ8IJ9m7QBmsqkI02fak6
+Mg/Ot9g8mN8j7BA9dl+xjB04YP15CFIugzA6
+XiROTPQTRswPVmNB66kaVGz4TNWaMlmd8W4H
+/l64jkIQ
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzNsOgiAAANB/4bW2CFnLNh9Ku0Aoo1Uz
+3rAUqbSLoWnr3+v97HxAnT4rcyvBZNgHd9Ve
+b+oEJiBtaXMsXJigqE58MiKXuWE+7WRMkYyJ
+4YZiid5dWshaocYmxR4S05jj0m1Pfx8FosuE
+54E+qIwu1cs+038bznc+EQHspHCuDxzn2wOf
+rdzzkG+s3Z2xm2udNYyNp1Wp4IIxTTTF5YCt
+rYOiSqg8Cxln4sKxXPb8ggcvM4ZyO1Vqnzuh
+B74/cmlEag==
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzdFugjAUgOF36e1MxprqhokXGxXscdqQ
+NOq4A1vcGQMNUAtd9u5y/+f7/8jdtB1eG7J8
+mZFbPv5ec02WxIzgznUYFHR/LyKxENUaPyPw
+2QlodhIoEQZ9jINs810VR2GL+hAIdHhOwlFP
+/Z6nvkxXKzIjHV6avLetmdjdOo1E8rV1VoVz
+/pQqzkr1/CO159SBYgs2gLJtNkegtWfsHT9Y
+LPvKNZFM/FsQlzerEYfedK+wa+TBG8k3dDvY
+GtRl2v0/AEsdRRw=
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwVzE1vgjAAgOH/0ismQ1AUEw/IQFsVxIHp
+eivQQOWjCmIty/773Ok9PMn7A56s67lowWo6
+ATeqakFzsAJMIZk1tp4awTN1oQUrjx9cNBKM
+DIIhD/m7Rq5Y86ipmg8ER/8uUxPp8Cr04DOw
+wQT0vGjpY+jYe3n0Ihd60XeO+cLxy91XLA/7
+mdajaiZdKyz918hrRRrRmiHNiq3DN+d4cRGn
+qg2zGI/zxEqWsPs4ymR77zR29nVS3u0Bmywb
+nPUa/P4BU/5D1Q==
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzcuOgjAYQOF36XZcQEmImLggUE2rQ9NM
+gqQ7ilV+7oNTa5n47rI/+c4/eur5AeOAdv4G
+TaXrxvKKdkg7Zqs+8hTOniqhIW0JnBO2yIJh
+WVDgwBrdy0X3tZVYGBWwgYKF6hi569pnqVhu
+Yr9HG/SA+1D+mVmv7DcRCU1JtYT6JxrpF1Nj
+LQ/ly0ZmeyKmUxBMKU+E8HRM7/klhvjyy3EX
+TMGWz7k1fngrzIu0kAnnuoZ70m9xnTe9OOh4
+3b0/vg1F3Q==
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwVzF8TgTAAAPDvslfuJGHz5lbTlnLlX3pr
+LUxSVNvhfHc8/+5+b6DyRyOrG5gN+6BOn9cq
+FWAG8ifTWYkMbgaKYzqhhSOXmL2SmJlJTOVK
+sjZzhU5cUXA87pI4/LvmI2bQS2UEdoBAHzTy
+dEvb7pH/St85YBpiL7T81X1fR5RkkTKa3dkR
+a6Q31h6RyNz2PHRcSzjkxNX0PPdP5su2bKIc
+DP2yLSHzloGAhHUwV4tBVk9FEY+87cSegs8X
+9h5B3g==
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwNzMEOgiAAANB/4VpbpuVmmwc15yDRqFXk
+TYWMNC0pClv/Xve39wGK91J0LVhMx+CW66bL
+GVgArtGrvDpGYSaqCKAN61DEARoyisyMQpEK
+dGfm5lVSNo+vf7OFEra+Klsi0gsxsGW4YAyk
+qNr88ez5v8QhCaCH7OPsvEch8x+kfzvKStg8
+fGocKVohfXs30QaP6PIcMU/4mQi4bOKTtfIP
+A6mT+0lqx57s+Tq1lFnVXYGmA971k8xzXfD9
+AXDhRBo=
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eNoNzMFugjAYAOB36dlk0pklmnAgUKB1omRrqWaXUhn8YIGBwsD47nr/8t3RkHU9
+NDXaWAvUqunSqDPaoGxiozbrZYqjIXXpB60IfLpsPkmGT5LCHlihEnHRAbmlRiwp
+jKCD9XR+2ciL59/YttEC9ZDX6nrrsle5I9yloZ8kuW/+unLy8EokajtsRxcfg9ap
+C8Dfof5568so4rIKHSCOmePm3Vfge9JYvDjESh/HvPy/VgciGRf8q51DUToW3tno
+8QTMikTi
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eNoNzMuOgjAUANB/6RYTeUw0NWFBsBmLIiDK
+IHFToOgNiIAULMZ/H/cn540G3j3hUaOVNkMN
+k9WD5WiFuHTG7I7VVN8PqU0XtCSws50piR09
+iSl44JSZ3rzy+qCdDVek90ilMEL2i2X+9ft1
+MBWBaaIZesK1Zr3o+Ld1ycmm664qOVuc0qA8
+FixUrtjY9KIehtu2aP0lptTojctc9fWQW0As
+8KfL/DUyW+CN2C6bqb0lf8JjP0rlhkTzpKZE
+VgtRTRZRN9/EoZF9Q==
+-----END ARGO VPN BRIDGE BLOCK-----`,
+`-----BEGIN ARGO VPN BRIDGE BLOCK-----
+eJwVzF8PgUAAAPDvcq/ZnFJk81Ap7rhLi5Xe
+KtEddf2hFvPd8fzbfm/QZU3LRAkWkxGo4uEu
+4jNYgGzAfVroMJFpl1hIQzeb7Sz8ikIsRyFi
+LsNDvHHqVMnZyVd5IsO/94mCIeIC0hXVwQi0
+7FrGj2eT/UpiHy3kSI3CBb6pHjmYrzqv+ZwI
+d1oYTaRVfdRVdEsds/OxlxrMNkppD635ypvo
+Y94OxfXhm5uWBwEJxExXLzlGO1dbH5EUkiX4
+fAECJUJr
+-----END ARGO VPN BRIDGE BLOCK-----`
+        ];
+
+        let currentIndex = 0;
+        let copiedIndices = new Set();
+        
+        const card = document.getElementById('card');
+        const codeText = document.getElementById('codeText');
+        const counter = document.getElementById('counter');
+        const statusText = document.getElementById('statusText');
+        const toast = document.getElementById('toast');
+
+        // Initial Load
+        updateContent();
+
+        // -----------------------
+        // Copy Logic
+        // -----------------------
+        function fallbackCopy(text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showToast();
+                markAsCopied();
+            } catch (err) {
+                alert("Manual Copy Required");
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function copyToClipboard() {
+            const text = bridges[currentIndex];
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showToast();
+                    markAsCopied();
+                }).catch(() => fallbackCopy(text));
+            } else {
+                fallbackCopy(text);
+            }
+        }
+
+        function markAsCopied() {
+            copiedIndices.add(currentIndex);
+            card.classList.add('copied-style');
+            statusText.innerHTML = '<span class="text-green-500 font-bold">COPIED SUCCESSFULLY</span>';
+        }
+
+        function showToast() {
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        }
+
+        // -----------------------
+        // Updated Swipe Logic (Fixes White Screen)
+        // -----------------------
+        let startX = 0;
+        let currentX = 0;
+        let isDragging = false;
+
+        card.addEventListener('mousedown', startDrag);
+        card.addEventListener('touchstart', startDrag, {passive: false});
+
+        document.addEventListener('mousemove', drag);
+        document.addEventListener('touchmove', drag, {passive: false});
+
+        document.addEventListener('mouseup', endDrag);
+        document.addEventListener('touchend', endDrag);
+
+        card.addEventListener('click', (e) => {
+            if (Math.abs(currentX) < 10) copyToClipboard();
+        });
+
+        function startDrag(e) {
+            isDragging = true;
+            startX = getClientX(e);
+            card.classList.remove('animate-reset');
+        }
+
+        function drag(e) {
+            if (!isDragging) return;
+            // Prevent scroll on mobile
+            if (e.type === 'touchmove') e.preventDefault();
+            
+            const x = getClientX(e);
+            currentX = x - startX;
+            const rotate = currentX * 0.05;
+            card.style.transform = `translateX(${currentX}px) rotate(${rotate}deg)`;
+        }
+
+        function endDrag(e) {
+            if (!isDragging) return;
+            isDragging = false;
+            
+            if (currentX > 100) {
+                changeCard('prev');
+            } else if (currentX < -100) {
+                changeCard('next');
+            } else {
+                // Reset Position
+                card.classList.add('animate-reset');
+                card.style.transform = `translateX(0px) rotate(0deg)`;
+            }
+            currentX = 0;
+        }
+
+        function handleBtnSwipe(dir) {
+            const direction = dir === 'left' ? 'next' : 'prev';
+            changeCard(direction);
+        }
+
+        function changeCard(direction) {
+            // 1. Animate Out
+            const endX = direction === 'next' ? -window.innerWidth : window.innerWidth;
+            card.style.transition = "transform 0.3s ease-in, opacity 0.3s ease-in";
+            card.style.transform = `translateX(${endX}px) rotate(${endX * 0.05}deg)`;
+            card.style.opacity = "0";
+
+            setTimeout(() => {
+                // 2. Update Data
+                if (direction === 'next') {
+                    currentIndex = (currentIndex + 1) % bridges.length;
+                } else {
+                    currentIndex = (currentIndex - 1 + bridges.length) % bridges.length;
+                }
+                updateContent();
+
+                // 3. Reset Position (Instantly while invisible)
+                card.style.transition = "none";
+                card.style.transform = "translateY(50px) scale(0.9)";
+                card.style.opacity = "0";
+
+                // 4. Animate In
+                setTimeout(() => {
+                    card.style.transition = "transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.4s ease-out";
+                    card.style.transform = "translateY(0) scale(1) rotate(0deg)";
+                    card.style.opacity = "1";
+                }, 50);
+
+            }, 300);
+        }
+
+        function updateContent() {
+            codeText.textContent = bridges[currentIndex];
+            counter.textContent = `${currentIndex + 1} / ${bridges.length}`;
+            
+            if (copiedIndices.has(currentIndex)) {
+                card.classList.add('copied-style');
+                statusText.innerHTML = '<span class="text-green-500 font-bold">COPIED SUCCESSFULLY</span>';
+            } else {
+                card.classList.remove('copied-style');
+                statusText.innerHTML = '<svg class="w-4 h-4 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg><span>Tap to Copy</span>';
+            }
+        }
+
+        function getClientX(e) {
+            return e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
+        }
+
+    </script>
+</body>
+</html>
+
